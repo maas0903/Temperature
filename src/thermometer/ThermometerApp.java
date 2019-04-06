@@ -40,10 +40,14 @@ public class ThermometerApp
     static String searchPattern = "28";
     static String deviceFile = "/w1_slave";
     static int Interval = 3000;
-    private static String UpperLimit = "22.5";
-    private static String LowerLimit = "21.5";
-    private static Float Upper;
-    private static Float Lower;
+    private static String DefaultUpperLimit = "22.5";
+    private static String DefaultLowerLimit = "21.5";
+    private static Float DefaultUpper;
+    private static Float DefaultLower;
+    private static List<Device> devices;
+    private static String ConfigFile = "thermometer.config.properties";
+    private static GpioController gpio = GpioFactory.getInstance();
+    //private static GpioPinDigitalOutput GPIOpin;
 
     private static void SetProperties()
     {
@@ -52,11 +56,37 @@ public class ThermometerApp
 
         try
         {
-            output = new FileOutputStream("thermometer.config.properties");
-            prop.setProperty("UpperLimit", UpperLimit);
-            prop.setProperty("LowerLimit", LowerLimit);
-            Upper = Float.parseFloat(UpperLimit);
-            Lower = Float.parseFloat(LowerLimit);
+            output = new FileOutputStream(ConfigFile);
+            prop.setProperty("DefaultUpperLimit", DefaultUpperLimit);
+            prop.setProperty("DefaultLowerLimit", DefaultLowerLimit);
+            DefaultUpper = Float.parseFloat(DefaultUpperLimit);
+            DefaultLower = Float.parseFloat(DefaultLowerLimit);
+
+            for (Device device : devices)
+            {
+                if (device.GPIOPin.equals(""))
+                {
+                    device.Enabled = false;
+                    device.GPIOPin = "GPIO_XX";
+                } else
+                {
+                    device.Enabled = true;
+                }
+
+                if (device.UpperLimit.equals(""))
+                {
+                    device.UpperLimit = DefaultUpperLimit;
+                }
+
+                if (device.LowerLimit.equals(""))
+                {
+                    device.LowerLimit = DefaultLowerLimit;
+                }
+
+                prop.setProperty(device.Name + "UpperLimit", device.UpperLimit);
+                prop.setProperty(device.Name + "LowerLimit", device.LowerLimit);
+            }
+
             prop.store(output, null);
         } catch (IOException e)
         {
@@ -74,28 +104,47 @@ public class ThermometerApp
         }
     }
 
-    private static void GetProperties()
+    private static boolean GetProperties()
     {
         Properties prop = new Properties();
         InputStream input = null;
 
-        File file = new File("thermometer.config.properties");
+        File file = new File(ConfigFile);
 
         if (!file.exists())
         {
             SetProperties();
+            return false;
         } else
         {
-
             try
             {
                 input = new FileInputStream(file);
                 prop.load(input);
 
-                UpperLimit = LoadProperty(prop, "UpperLimit", "22.5");
-                LowerLimit = LoadProperty(prop, "LowerLimit", "21.5");
-                Upper = Float.parseFloat(UpperLimit);
-                Lower = Float.parseFloat(LowerLimit);
+                DefaultUpperLimit = LoadProperty(prop, "DefaultUpperLimit", "22.5");
+                DefaultLowerLimit = LoadProperty(prop, "DefaultLowerLimit", "21.5");
+                DefaultUpper = Float.parseFloat(DefaultUpperLimit);
+                DefaultLower = Float.parseFloat(DefaultLowerLimit);
+
+                for (Device device : devices)
+                {
+                    device.Upper = Float.parseFloat(LoadProperty(prop, device.Name + "UpperLimit", DefaultUpperLimit));
+                    device.Lower = Float.parseFloat(LoadProperty(prop, device.Name + "LowerLimit", DefaultLowerLimit));
+
+                    if (device.GPIOPin.equals("GPIO_XX"))
+                    {
+                        device.Enabled = false;
+                    } else
+                    {
+                        device.Enabled = true;
+                        if (device.GPIOpin.equals(null))
+                        {
+                            device.GPIOpin = gpio.provisionDigitalOutputPin(RaspiPin.GPIO_00, "PinOut", PinState.LOW);
+                            device.GPIOpin.setShutdownOptions(true, PinState.LOW);
+                        }
+                    }
+                }
 
             } catch (IOException e)
             {
@@ -111,6 +160,7 @@ public class ThermometerApp
                     }
                 }
             }
+            return true;
         }
     }
 
@@ -173,11 +223,11 @@ public class ThermometerApp
      */
     public static void main(String[] args) throws IOException, InterruptedException
     {
-        final GpioController gpio = GpioFactory.getInstance();
-        final GpioPinDigitalOutput GPIOpin = gpio.provisionDigitalOutputPin(RaspiPin.GPIO_00, "PinOut", PinState.LOW);
-        GPIOpin.setShutdownOptions(true, PinState.LOW);
+        //final GpioController gpio = GpioFactory.getInstance();
+        //final GpioPinDigitalOutput GPIOpin = gpio.provisionDigitalOutputPin(RaspiPin.GPIO_00, "PinOut", PinState.LOW);
+        //GPIOpin.setShutdownOptions(true, PinState.LOW);
 
-        List<Device> devices = SetupDevices(GetDS18B20Directories());
+        devices = SetupDevices(GetDS18B20Directories());
         Timer timer = new Timer();
         timer.scheduleAtFixedRate(new TimerTask()
         {
@@ -186,26 +236,65 @@ public class ThermometerApp
             {
                 try
                 {
-                    GetProperties();
+                    if (!GetProperties())
+                    {
+                        Path currentRelativePath = Paths.get("");
+                        String appPath = currentRelativePath.toAbsolutePath().toString();
+
+                        System.out.println("Please setup the configuration in " + appPath + "/" + ConfigFile);
+                        System.exit(0);
+                    };
+
                     for (Device device : devices)
                     {
                         device.Temperature = GetDeviceTemperature(device.Directory);
-                        if (device.Temperature < Lower)
+                        if (device.Temperature < DefaultLower)
                         {
-                            System.out.println(device.Name + " - " + device.Temperature + " < " + Lower + " Pad is ON");
-                            GPIOpin.high();
-                        } else if (device.Temperature > Upper)
+                            System.out.println(device.Name + " - " + device.Temperature + " < " + DefaultLower + " Pad is ON");
+                            if (device.Enabled)
+                            {
+                                SetPin(device, 1);
+                            } else
+                            {
+                                System.out.println(device.Name + " GPIOPin is not setup");
+                            }
+
+                        } else if (device.Temperature > DefaultUpper)
                         {
-                            System.out.println(device.Name + " - " + device.Temperature + " > " + Upper + " Pad is OFF");
-                            GPIOpin.low();
+                            System.out.println(device.Name + " - " + device.Temperature + " > " + DefaultUpper + " Pad is OFF");
+                            if (device.Enabled)
+                            {
+                                SetPin(device, 0);
+                            }
                         }
                     }
                 } catch (IOException ex)
                 {
                 }
             }
-        }, 0, Interval);
-        
+
+            private void SetPin(Device device, int i)
+            {
+                try
+                {
+                    if (i == 1)
+                    {
+
+                        device.GPIOpin.high();
+                    } else
+                    {
+                        device.GPIOpin.low();
+                    }
+
+                } catch (Exception e)
+                {
+                    System.out.println(device.Name + " GPIOPin is not setup");
+                }
+            }
+        },
+                 0, Interval
+        );
+
         //TODO gpio.shutdown(); put somewhere else to run at shutdown only
     }
 }

@@ -5,10 +5,8 @@
  */
 package thermometer;
 
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.OutputStream;
-import java.util.Properties;
+import com.pi4j.io.gpio.GpioPinDigitalOutput;
+import com.pi4j.io.gpio.RaspiPin;
 
 /**
  *
@@ -19,6 +17,14 @@ public class Device
     public String Name;
     public Float Temperature;
     public String Directory;
+    public String UpperLimit;
+    public String LowerLimit;
+    public Float Upper;
+    public Float Lower;
+    public  String GPIOPin;
+    public  RaspiPin Pin;
+    GpioPinDigitalOutput GPIOpin;
+    public boolean Enabled;
 
     public Device(String Directory)
     {
