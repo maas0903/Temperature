@@ -39,7 +39,7 @@ public class ThermometerApp
     static String baseDir = "/sys/bus/w1/devices/";
     static String searchPattern = "28";
     static String deviceFile = "/w1_slave";
-    static int Interval = 3000;
+    static int Interval = 5000;
     private static String UpperLimit = "22.5";
     private static String LowerLimit = "21.5";
     private static Float Upper;
@@ -190,14 +190,19 @@ public class ThermometerApp
                     for (Device device : devices)
                     {
                         device.Temperature = GetDeviceTemperature(device.Directory);
-                        if (device.Temperature < Lower)
+
+                        if (device.Temperature < Upper && device.Temperature > Lower)
                         {
-                            System.out.println(device.Name + " - " + device.Temperature + " < " + Lower + " Pad is ON");
+                            System.out.println(device.Name + " - " + Upper + " (Upper) > " + device.Temperature + " > (Lower) " + Lower  + " Pad is ON");
                             GPIOpin.high();
                         } else if (device.Temperature > Upper)
                         {
-                            System.out.println(device.Name + " - " + device.Temperature + " > " + Upper + " Pad is OFF");
+                            System.out.println(device.Name + " - " + device.Temperature + " > (Upper)" + Upper + " Pad is OFF");
                             GPIOpin.low();
+                        } else if (device.Temperature < Lower)
+                        {
+                            System.out.println(device.Name + " - " + device.Temperature + " < (Lower) " + Lower + " Pad is ON");
+                            GPIOpin.high();
                         }
                     }
                 } catch (IOException ex)
