@@ -25,6 +25,7 @@ public class Device
     public  RaspiPin Pin;
     GpioPinDigitalOutput GPIOpin;
     public boolean Enabled;
+    
 
     public Device(String Directory)
     {

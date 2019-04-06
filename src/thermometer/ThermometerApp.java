@@ -223,10 +223,6 @@ public class ThermometerApp
      */
     public static void main(String[] args) throws IOException, InterruptedException
     {
-        //final GpioController gpio = GpioFactory.getInstance();
-        //final GpioPinDigitalOutput GPIOpin = gpio.provisionDigitalOutputPin(RaspiPin.GPIO_00, "PinOut", PinState.LOW);
-        //GPIOpin.setShutdownOptions(true, PinState.LOW);
-
         devices = SetupDevices(GetDS18B20Directories());
         Timer timer = new Timer();
         timer.scheduleAtFixedRate(new TimerTask()
