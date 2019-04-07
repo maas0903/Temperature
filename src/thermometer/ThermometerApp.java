@@ -52,7 +52,7 @@ public class ThermometerApp
     private static final String DEBUGFILECONTENT = "66 01 4b 46 7f ff 0a 10 2d : crc=2d YES\n"
             + "66 01 4b 46 7f ff 0a 10 2d t=22375";
     private static final int NUMBEROFDEBUGDEVICES = 2;
-    private static final boolean DEBUG = true;
+    private static final boolean DEBUG = false;
 
     private static void SetProperties()
     {
@@ -156,7 +156,13 @@ public class ThermometerApp
                         {
                             if (device.GPIOpin == null)
                             {
-                                device.GPIOpin = GPIO.provisionDigitalOutputPin(RaspiPin.GPIO_00, "PinOut", PinState.LOW);
+                                try
+                                {
+                                    device.GPIOpin = GPIO.provisionDigitalOutputPin(RaspiPin.GPIO_00, "PinOut", PinState.LOW);
+                                } catch (Exception e)
+                                {
+                                    device.GPIOpin = GPIO.provisionDigitalOutputPin(RaspiPin.GPIO_01, "PinOut", PinState.LOW);
+                                }
                                 device.GPIOpin.setShutdownOptions(true, PinState.LOW);
                             }
                         }
