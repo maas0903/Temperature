@@ -10,11 +10,6 @@ package thermometer;
  * @author marius
  */
 import static com.melektro.Tools.LoadProperty.LoadProperty;
-import com.pi4j.io.gpio.GpioController;
-import com.pi4j.io.gpio.GpioFactory;
-import com.pi4j.io.gpio.GpioPinDigitalOutput;
-import com.pi4j.io.gpio.PinState;
-import com.pi4j.io.gpio.RaspiPin;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
@@ -33,6 +28,12 @@ import java.util.TimerTask;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import com.pi4j.io.gpio.GpioController;
+import com.pi4j.io.gpio.GpioFactory;
+import com.pi4j.io.gpio.GpioPinDigitalOutput;
+import com.pi4j.io.gpio.PinState;
+import com.pi4j.io.gpio.RaspiPin;
+
 public class ThermometerApp
 {
 
@@ -45,9 +46,13 @@ public class ThermometerApp
     private static Float DefaultUpper;
     private static Float DefaultLower;
     private static List<Device> devices;
-    private static String ConfigFile = "thermometer.config.properties";
-    private static GpioController gpio = GpioFactory.getInstance();
-    //private static GpioPinDigitalOutput GPIOpin;
+    protected static final String CONFIGFILE = "thermometer.config.properties";
+    private static final GpioController GPIO = GpioFactory.getInstance();
+
+    private static final String DEBUGFILECONTENT = "66 01 4b 46 7f ff 0a 10 2d : crc=2d YES\n"
+            + "66 01 4b 46 7f ff 0a 10 2d t=22375";
+    private static final int NUMBEROFDEBUGDEVICES = 2;
+    private static final boolean DEBUG = true;
 
     private static void SetProperties()
     {
@@ -56,7 +61,7 @@ public class ThermometerApp
 
         try
         {
-            output = new FileOutputStream(ConfigFile);
+            output = new FileOutputStream(CONFIGFILE);
             prop.setProperty("DefaultUpperLimit", DefaultUpperLimit);
             prop.setProperty("DefaultLowerLimit", DefaultLowerLimit);
             DefaultUpper = Float.parseFloat(DefaultUpperLimit);
@@ -64,7 +69,7 @@ public class ThermometerApp
 
             for (Device device : devices)
             {
-                if (device.GPIOPin.equals(""))
+                if (device.GPIOPin == null || device.GPIOPin.equals(""))
                 {
                     device.Enabled = false;
                     device.GPIOPin = "GPIO_XX";
@@ -83,6 +88,7 @@ public class ThermometerApp
                     device.LowerLimit = DefaultLowerLimit;
                 }
 
+                prop.setProperty(device.Name + "_GPIOPin", device.GPIOPin);
                 prop.setProperty(device.Name + "UpperLimit", device.UpperLimit);
                 prop.setProperty(device.Name + "LowerLimit", device.LowerLimit);
             }
@@ -109,7 +115,7 @@ public class ThermometerApp
         Properties prop = new Properties();
         InputStream input = null;
 
-        File file = new File(ConfigFile);
+        File file = new File(CONFIGFILE);
 
         if (!file.exists())
         {
@@ -131,17 +137,28 @@ public class ThermometerApp
                 {
                     device.Upper = Float.parseFloat(LoadProperty(prop, device.Name + "UpperLimit", DefaultUpperLimit));
                     device.Lower = Float.parseFloat(LoadProperty(prop, device.Name + "LowerLimit", DefaultLowerLimit));
+                    device.GPIOPin = LoadProperty(prop, device.Name + "_GPIOPin", "GPIO_XX");
 
-                    if (device.GPIOPin.equals("GPIO_XX"))
+                    if (device.GPIOPin == null || device.GPIOPin.equals("GPIO_XX"))
                     {
                         device.Enabled = false;
                     } else
                     {
                         device.Enabled = true;
-                        if (device.GPIOpin.equals(null))
+
+                        if (DEBUG)
                         {
-                            device.GPIOpin = gpio.provisionDigitalOutputPin(RaspiPin.GPIO_00, "PinOut", PinState.LOW);
-                            device.GPIOpin.setShutdownOptions(true, PinState.LOW);
+                            if (!Files.exists(Paths.get(device.Name)))
+                            {
+                                Files.write(Paths.get(device.Name), DEBUGFILECONTENT.getBytes());
+                            }
+                        } else
+                        {
+                            if (device.GPIOpin == null)
+                            {
+                                device.GPIOpin = GPIO.provisionDigitalOutputPin(RaspiPin.GPIO_00, "PinOut", PinState.LOW);
+                                device.GPIOpin.setShutdownOptions(true, PinState.LOW);
+                            }
                         }
                     }
                 }
@@ -167,20 +184,31 @@ public class ThermometerApp
     public static List GetDS18B20Directories()
     {
         List<String> result = new ArrayList<>();
-        try (Stream<Path> walk = Files.walk(Paths.get(baseDir)))
-        {
-            List<String> devicesDir = walk
-                    .filter(Files::isDirectory)
-                    .map(x -> x.toString())
-                    .collect(Collectors.toList());
 
-            devicesDir.stream().filter((device) -> (device.contains("/28"))).forEachOrdered((device) ->
+        if (DEBUG)
+        {
+            for (int i = 0; i < NUMBEROFDEBUGDEVICES; i++)
             {
-                result.add(device + deviceFile);
-            });
-        } catch (IOException e)
-        {
+                result.add("Debug" + i);
+            }
 
+        } else
+        {
+            try (Stream<Path> walk = Files.walk(Paths.get(baseDir)))
+            {
+                List<String> devicesDir = walk
+                        .filter(Files::isDirectory)
+                        .map(x -> x.toString())
+                        .collect(Collectors.toList());
+
+                devicesDir.stream().filter((device) -> (device.contains("/28"))).forEachOrdered((device) ->
+                {
+                    result.add(device + deviceFile);
+                });
+            } catch (IOException e)
+            {
+
+            }
         }
         return result;
     }
@@ -191,10 +219,19 @@ public class ThermometerApp
         return new String(encoded, encoding);
     }
 
-    public static Float GetDeviceTemperature(String dir) throws IOException
+    public static Float GetDeviceTemperature(Device device) throws IOException
     {
-        String cont = readFile(dir, Charset.defaultCharset());
         Float result;
+        String cont;
+
+        if (DEBUG)
+        {
+            cont = readFile(device.Name, Charset.defaultCharset());
+        } else
+        {
+            cont = readFile(device.Directory, Charset.defaultCharset());
+        }
+
         if (cont.contains(" YES"))
         {
             result = Float.parseFloat(cont.substring(cont.indexOf("t=") + 2)) / 1000;
@@ -202,18 +239,92 @@ public class ThermometerApp
         {
             result = Float.parseFloat("-1000");
         }
+
         return result;
     }
 
     private static List<Device> SetupDevices(List<String> DS18B20Directories)
     {
-        List<Device> devices = new ArrayList<>();
-        DS18B20Directories.forEach((dir) ->
-        {
-            devices.add(new Device(dir));
-        });
+        List<Device> Devices = new ArrayList<>();
 
-        return devices;
+        int DebugNo = 0;
+        for (String dir : DS18B20Directories)
+        {
+            Devices.add(new Device(dir, DEBUG, DebugNo));
+            DebugNo = DebugNo + 1;
+        }
+
+        return Devices;
+    }
+
+    private static void SetPin(Device device, int i)
+    {
+        if (DEBUG)
+        {
+            device.DebugPin = i;
+        } else
+        {
+            try
+            {
+                if (i == 1)
+                {
+                    device.GPIOpin.high();
+                } else
+                {
+                    device.GPIOpin.low();
+                }
+
+            } catch (Exception e)
+            {
+                System.out.println(device.Name + " GPIOPin is not setup");
+            }
+        }
+    }
+
+    private static void RunACycle()
+    {
+        try
+        {
+            if (!GetProperties())
+            {
+                Path currentRelativePath = Paths.get("");
+                String appPath = currentRelativePath.toAbsolutePath().toString();
+
+                System.out.println("Please setup the configuration in " + appPath + "/" + CONFIGFILE);
+                System.exit(0);
+            }
+
+            for (Device device : devices)
+            {
+                device.cycle = device.cycle + 1;
+                device.Temperature = GetDeviceTemperature(device);
+                if (device.goingUp)
+                {
+                    if (device.Temperature > device.Upper)
+                    {
+                        device.goingUp = false;
+                        System.out.println("Cycle = " + device.cycle + " - " + device.Name + " - Phase change from going up to going down");
+                    } else
+                    {
+                        SetPin(device, 1);
+                        System.out.println("Cycle = " + device.cycle + " - " + device.Name + " - going up - " + device.Temperature + " < (Upper) " + device.Upper + " Pad is ON");
+                    }
+                } else
+                {
+                    if (device.Temperature < device.Lower)
+                    {
+                        System.out.println("Cycle = " + device.cycle + " - " + device.Name + " - Phase change from going down to going up");
+                        device.goingUp = true;
+                    } else
+                    {
+                        SetPin(device, 0);
+                        System.out.println("Cycle = " + device.cycle + " - " + device.Name + " - going down - " + device.Temperature + " > (Lower)" + device.Lower + " Pad is OFF");
+                    }
+                }
+            }
+        } catch (IOException ex)
+        {
+        }
     }
 
     /**
@@ -224,72 +335,28 @@ public class ThermometerApp
     public static void main(String[] args) throws IOException, InterruptedException
     {
         devices = SetupDevices(GetDS18B20Directories());
-        Timer timer = new Timer();
-        timer.scheduleAtFixedRate(new TimerTask()
+
+        if (DEBUG)
         {
-            @Override
-            public void run()
+            int DebugCycles = 10;
+            for (int i = 0; i < DebugCycles; i++)
             {
-                try
-                {
-                    if (!GetProperties())
-                    {
-                        Path currentRelativePath = Paths.get("");
-                        String appPath = currentRelativePath.toAbsolutePath().toString();
-
-                        System.out.println("Please setup the configuration in " + appPath + "/" + ConfigFile);
-                        System.exit(0);
-                    };
-
-                    for (Device device : devices)
-                    {
-                        device.Temperature = GetDeviceTemperature(device.Directory);
-                        if (device.Temperature < DefaultLower)
-                        {
-                            System.out.println(device.Name + " - " + device.Temperature + " < " + DefaultLower + " Pad is ON");
-                            if (device.Enabled)
-                            {
-                                SetPin(device, 1);
-                            } else
-                            {
-                                System.out.println(device.Name + " GPIOPin is not setup");
-                            }
-
-                        } else if (device.Temperature > DefaultUpper)
-                        {
-                            System.out.println(device.Name + " - " + device.Temperature + " > " + DefaultUpper + " Pad is OFF");
-                            if (device.Enabled)
-                            {
-                                SetPin(device, 0);
-                            }
-                        }
-                    }
-                } catch (IOException ex)
-                {
-                }
+                RunACycle();
             }
-
-            private void SetPin(Device device, int i)
+        } else
+        {
+            Timer timer = new Timer();
+            timer.scheduleAtFixedRate(new TimerTask()
             {
-                try
+                @Override
+                public void run()
                 {
-                    if (i == 1)
-                    {
-
-                        device.GPIOpin.high();
-                    } else
-                    {
-                        device.GPIOpin.low();
-                    }
-
-                } catch (Exception e)
-                {
-                    System.out.println(device.Name + " GPIOPin is not setup");
+                    RunACycle();
                 }
-            }
-        },
-                 0, Interval
-        );
+            },
+                    0, Interval
+            );
+        }
 
         //TODO gpio.shutdown(); put somewhere else to run at shutdown only
     }
