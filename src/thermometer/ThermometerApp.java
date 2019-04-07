@@ -8,6 +8,9 @@ package thermometer;
 /**
  *
  * @author marius
+ * To run:
+ * cd '/home/pi/usbdrv/NetBeansProjects//Thermometer'; '/usr/lib/jvm/java-9-openjdk-armhf/bin/java' -Dfile.encoding=UTF-8   -jar /home/pi/usbdrv/NetBeansProjects//Thermometer/dist/Thermometer.jar 
+ * 
  */
 import static com.melektro.Tools.LoadProperty.LoadProperty;
 import com.pi4j.io.gpio.GpioController;
@@ -44,6 +47,8 @@ public class ThermometerApp
     private static String LowerLimit = "21.5";
     private static Float Upper;
     private static Float Lower;
+    private static boolean goingUp = true;
+    private static long cycle = 0;
 
     private static void SetProperties()
     {
@@ -186,23 +191,41 @@ public class ThermometerApp
             {
                 try
                 {
+                    if (cycle < Long.MAX_VALUE)
+                    {
+                        cycle = cycle + 1;
+                    } else
+                    {
+                        cycle = 1;
+                    }
+
                     GetProperties();
                     for (Device device : devices)
                     {
                         device.Temperature = GetDeviceTemperature(device.Directory);
 
-                        if (device.Temperature < Upper && device.Temperature > Lower)
+                        if (goingUp)
                         {
-                            System.out.println(device.Name + " - " + Upper + " (Upper) > " + device.Temperature + " > (Lower) " + Lower  + " Pad is ON");
-                            GPIOpin.high();
-                        } else if (device.Temperature > Upper)
+                            if (device.Temperature > Upper)
+                            {
+                                goingUp = false;
+                                System.out.println("Cycle = " + cycle + " - " + device.Name + " - Phase change from going up to going down");
+                            } else
+                            {
+                                GPIOpin.high();
+                                System.out.println("Cycle = " + cycle + " - " + device.Name + " - going up - " + device.Temperature + " < (Upper) " + Upper + " Pad is ON");
+                            }
+                        } else
                         {
-                            System.out.println(device.Name + " - " + device.Temperature + " > (Upper)" + Upper + " Pad is OFF");
-                            GPIOpin.low();
-                        } else if (device.Temperature < Lower)
-                        {
-                            System.out.println(device.Name + " - " + device.Temperature + " < (Lower) " + Lower + " Pad is ON");
-                            GPIOpin.high();
+                            if (device.Temperature < Lower)
+                            {
+                                System.out.println("Cycle = " + cycle + " - " + device.Name + " - Phase change from going down to going up");
+                                goingUp = true;
+                            } else
+                            {
+                                GPIOpin.low();
+                                System.out.println("Cycle = " + cycle + " - " + device.Name + " - going down - " + device.Temperature + " > (Lower)" + Lower + " Pad is OFF");
+                            }
                         }
                     }
                 } catch (IOException ex)
@@ -210,7 +233,7 @@ public class ThermometerApp
                 }
             }
         }, 0, Interval);
-        
+
         //TODO gpio.shutdown(); put somewhere else to run at shutdown only
     }
 }
