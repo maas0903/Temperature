@@ -33,6 +33,7 @@ import com.pi4j.io.gpio.GpioFactory;
 import com.pi4j.io.gpio.GpioPinDigitalOutput;
 import com.pi4j.io.gpio.PinState;
 import com.pi4j.io.gpio.RaspiPin;
+import thermometer.Mappers.DeviceGPIOToRaspiGPIOMapper;
 
 public class ThermometerApp
 {
@@ -158,10 +159,10 @@ public class ThermometerApp
                             {
                                 try
                                 {
-                                    device.GPIOpin = GPIO.provisionDigitalOutputPin(RaspiPin.GPIO_00, "PinOut", PinState.LOW);
+                                    device.GPIOpin = GPIO.provisionDigitalOutputPin(DeviceGPIOToRaspiGPIOMapper.Map(device.GPIOPin), "PinOut", PinState.LOW);
                                 } catch (Exception e)
                                 {
-                                    device.GPIOpin = GPIO.provisionDigitalOutputPin(RaspiPin.GPIO_01, "PinOut", PinState.LOW);
+                                    device.Enabled = false;
                                 }
                                 device.GPIOpin.setShutdownOptions(true, PinState.LOW);
                             }
@@ -243,7 +244,7 @@ public class ThermometerApp
             result = Float.parseFloat(cont.substring(cont.indexOf("t=") + 2)) / 1000;
         } else
         {
-            result = Float.parseFloat("-1000");
+            result = Float.parseFloat("1000");
         }
 
         return result;
