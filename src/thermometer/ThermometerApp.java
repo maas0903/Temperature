@@ -309,7 +309,7 @@ public class ThermometerApp
                 device.Temperature = GetDeviceTemperature(device);
                 if (device.goingUp)
                 {
-                    if (device.Temperature > device.Upper)
+                    if (device.Temperature >= device.Upper)
                     {
                         device.goingUp = false;
                         System.out.println("Cycle = " + device.cycle + " - " + device.Name + " - Phase change from going up to going down");
@@ -320,7 +320,7 @@ public class ThermometerApp
                     }
                 } else
                 {
-                    if (device.Temperature < device.Lower)
+                    if (device.Temperature <= device.Lower)
                     {
                         System.out.println("Cycle = " + device.cycle + " - " + device.Name + " - Phase change from going down to going up");
                         device.goingUp = true;
