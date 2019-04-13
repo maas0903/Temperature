@@ -53,7 +53,7 @@ public class ThermometerApp
     private static final String DEBUGFILECONTENT = "66 01 4b 46 7f ff 0a 10 2d : crc=2d YES\n"
             + "66 01 4b 46 7f ff 0a 10 2d t=22375";
     private static final int NUMBEROFDEBUGDEVICES = 2;
-    private static final boolean DEBUG = false;
+    private static final boolean DEBUG = true;
 
     private static void SetProperties()
     {
@@ -74,6 +74,7 @@ public class ThermometerApp
                 {
                     device.Enabled = false;
                     device.GPIOPin = "GPIO_XX";
+                    prop.setProperty(device.Name + "Enabled", "false");
                 } else
                 {
                     device.Enabled = true;
@@ -139,6 +140,7 @@ public class ThermometerApp
                     device.Upper = Float.parseFloat(LoadProperty(prop, device.Name + "UpperLimit", DefaultUpperLimit));
                     device.Lower = Float.parseFloat(LoadProperty(prop, device.Name + "LowerLimit", DefaultLowerLimit));
                     device.GPIOPin = LoadProperty(prop, device.Name + "_GPIOPin", "GPIO_XX");
+                    String Enabled = LoadProperty(prop, device.Name + "Enabled", "false");
 
                     if (device.GPIOPin == null || device.GPIOPin.equals("GPIO_XX"))
                     {
