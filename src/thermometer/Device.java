@@ -5,10 +5,8 @@
  */
 package thermometer;
 
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.OutputStream;
-import java.util.Properties;
+import com.pi4j.io.gpio.GpioPinDigitalOutput;
+import com.pi4j.io.gpio.RaspiPin;
 
 /**
  *
@@ -16,14 +14,32 @@ import java.util.Properties;
  */
 public class Device
 {
+
     public String Name;
     public Float Temperature;
     public String Directory;
+    public String UpperLimit = "22.5";
+    public String LowerLimit = "21.5";
+    public Float Upper;
+    public Float Lower;
+    public String GPIOPin;
+    public RaspiPin Pin;
+    GpioPinDigitalOutput GPIOpin;
+    public boolean Enabled;
+    public boolean goingUp = true;
+    public long cycle = 0;
+    public int DebugPin = 0;
 
-    public Device(String Directory)
+    public Device(String Directory, boolean Debug, int DebugNo)
     {
-        this.Directory = Directory;
-        String[] splitted = Directory.split("/");
-        Name = splitted[splitted.length - 2];
+        if (Debug)
+        {
+            Name = "Debug"+DebugNo;
+        } else
+        {
+            this.Directory = Directory;
+            String[] splitted = Directory.split("/");
+            Name = splitted[splitted.length - 2];
+        }
     }
 }
