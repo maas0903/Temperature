@@ -7,17 +7,21 @@ package thermometer;
 
 /**
  *
- * @author marius
- * To run:
- * cd '/home/pi/usbdrv/NetBeansProjects//Thermometer'; '/usr/lib/jvm/java-9-openjdk-armhf/bin/java' -Dfile.encoding=UTF-8   -jar /home/pi/usbdrv/NetBeansProjects//Thermometer/dist/Thermometer.jar 
- * 
+ * @author marius To run: cd '/home/pi/usbdrv/NetBeansProjects//Thermometer';
+ * '/usr/lib/jvm/java-9-openjdk-armhf/bin/java' -Dfile.encoding=UTF-8 -jar
+ * /home/pi/usbdrv/NetBeansProjects//Thermometer/dist/Thermometer.jar
+ *
  */
 import static com.melektro.Tools.LoadProperty.LoadProperty;
+import com.melektro.Tools.MyWget;
+import static com.melektro.Tools.MyWget.MyWget;
 import com.pi4j.io.gpio.GpioController;
 import com.pi4j.io.gpio.GpioFactory;
 import com.pi4j.io.gpio.GpioPinDigitalOutput;
+import com.pi4j.io.gpio.PinPullResistance;
 import com.pi4j.io.gpio.PinState;
 import com.pi4j.io.gpio.RaspiPin;
+import com.sun.corba.se.impl.protocol.giopmsgheaders.Message;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
@@ -31,10 +35,20 @@ import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Properties;
-import java.util.Timer;
-import java.util.TimerTask;
+//import java.util.Timer;
+//import java.util.TimerTask;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import javax.naming.Context;
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import com.pi4j.io.gpio.PinMode;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
+import static javafx.scene.input.KeyCode.T;
 
 public class ThermometerApp
 {
@@ -49,6 +63,7 @@ public class ThermometerApp
     private static Float Lower;
     private static boolean goingUp = true;
     private static long cycle = 0;
+    private static LocalDate dateNow = LocalDate.MIN;
 
     private static void SetProperties()
     {
@@ -178,31 +193,50 @@ public class ThermometerApp
      */
     public static void main(String[] args) throws IOException, InterruptedException
     {
+        
+    DateTimeFormatter timeFormatter = DateTimeFormatter.ofPattern("h:m:s a");        
+    LocalTime l =LocalTime.from(timeFormatter.parse("4:43:38 AM"));
+
+        
+        SunRiseSet sunRiseSet=null;
+
         final GpioController gpio = GpioFactory.getInstance();
-        final GpioPinDigitalOutput GPIOpin = gpio.provisionDigitalOutputPin(RaspiPin.GPIO_00, "PinOut", PinState.LOW);
-        GPIOpin.setShutdownOptions(true, PinState.LOW);
+        //Runtime.getRuntime().addShutdownHook(new OnExit(gpio));
+        final GpioPinDigitalOutput GPIOpin = gpio.provisionDigitalOutputPin(RaspiPin.GPIO_00, "PinOut", PinState.HIGH);
+        GPIOpin.setShutdownOptions(true, PinState.HIGH);
 
         List<Device> devices = SetupDevices(GetDS18B20Directories());
-        Timer timer = new Timer();
-        timer.scheduleAtFixedRate(new TimerTask()
-        {
-            @Override
-            public void run()
-            {
-                try
-                {
-                    if (cycle < Long.MAX_VALUE)
-                    {
-                        cycle = cycle + 1;
-                    } else
-                    {
-                        cycle = 1;
-                    }
 
-                    GetProperties();
-                    for (Device device : devices)
+        for (;;)
+        {
+            try
+            {
+                if (cycle == 4)
+                {
+//                        System.out.println("Debug exit");
+//                        gpio.shutdown();
+//                        System.exit(0);
+                }
+                if (cycle < Long.MAX_VALUE)
+                {
+                    cycle = cycle + 1;
+                } else
+                {
+                    cycle = 1;
+                }
+
+                if (GetNewSunriseSunSet())
+                {
+                    sunRiseSet = GetSunRiseSunSet();
+                    dateNow = LocalDate.now();
+                }
+
+                GetProperties();
+                for (Device device : devices)
+                {
+                    device.Temperature = GetDeviceTemperature(device.Directory);
+                    if (!TimeToSleep(sunRiseSet, 1))
                     {
-                        device.Temperature = GetDeviceTemperature(device.Directory);
 
                         if (goingUp)
                         {
@@ -212,7 +246,7 @@ public class ThermometerApp
                                 System.out.println("Cycle = " + cycle + " - " + device.Name + " - Phase change from going up to going down");
                             } else
                             {
-                                GPIOpin.high();
+                                GPIOpin.low();
                                 System.out.println("Cycle = " + cycle + " - " + device.Name + " - going up - " + device.Temperature + " < (Upper) " + Upper + " Pad is ON");
                             }
                         } else
@@ -223,17 +257,60 @@ public class ThermometerApp
                                 goingUp = true;
                             } else
                             {
-                                GPIOpin.low();
+                                GPIOpin.high();
                                 System.out.println("Cycle = " + cycle + " - " + device.Name + " - going down - " + device.Temperature + " > (Lower)" + Lower + " Pad is OFF");
                             }
                         }
                     }
-                } catch (IOException ex)
-                {
+                    else
+                    {
+                        GPIOpin.high();
+                        System.out.println("Cycle = " + cycle + " - " + device.Name + " Sleeping at " + device.Temperature + " deg C");
+                    }
                 }
-            }
-        }, 0, Interval);
 
-        //TODO gpio.shutdown(); put somewhere else to run at shutdown only
+            } catch (IOException ex)
+            {
+            }
+            Thread.sleep(Interval);
+        }
+    }
+
+    private static SunRiseSet GetSunRiseSunSet() throws IOException
+    {
+        //https://sunrise-sunset.org/api
+        String riseSet = MyWget("https://api.sunrise-sunset.org/json?lat=50.918769&lng=4.698409", "", "")
+                .replace('[', ' ')
+                .replace(']', ' ');
+         //String riseSet =  "{\"results\":{\"sunrise\":\"4:43:38 AM\",\"sunset\":\"3:0:0 PM\",\"solar_noon\":\"11:40:57 AM\",\"day_length\":\"13:54:39\",\"civil_twilight_begin\":\"4:08:36 AM\",\"civil_twilight_end\":\"7:13:18 PM\",\"nautical_twilight_begin\":\"3:25:03 AM\",\"nautical_twilight_end\":\"7:56:51 PM\",\"astronomical_twilight_begin\":\"2:36:08 AM\",\"astronomical_twilight_end\":\"8:45:46 PM\"},\"status\":\"OK\"}" ;
+         
+        Gson gson = new Gson();
+
+        return gson.fromJson(riseSet, SunRiseSet.class);
+    }
+
+    private static boolean TimeToSleep(SunRiseSet sunRiseSet, int i)
+    {
+        LocalTime sunRise = sunRiseSet.getResults().getSunrise();
+        LocalDateTime sunRiseDT = LocalDateTime.of(LocalDate.now(), sunRise);
+        LocalTime sunSet = sunRiseSet.getResults().getSunset();
+        LocalDateTime sunSetDT = LocalDateTime.of(LocalDate.now(), sunSet);
+        LocalDateTime now = LocalDateTime.now();
+        if (now.isAfter(sunRiseDT))
+        {
+           sunRiseDT = sunRiseDT.plusDays(1); 
+        }
+        return (now.isAfter(sunSetDT.plusHours(i)) && now.isBefore(sunRiseDT.plusHours(i)));
+    }
+
+    private static boolean GetNewSunriseSunSet()
+    {
+        LocalDate localNow = LocalDate.now();
+        return !dateNow.isEqual(localNow);
+    }
+
+    private static boolean AfterMidnight(LocalDateTime now)
+    {
+        return now.isAfter(LocalDateTime.of(LocalDate.now(), LocalTime.MIDNIGHT));
     }
 }
