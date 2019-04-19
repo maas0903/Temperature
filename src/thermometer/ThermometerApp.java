@@ -10,15 +10,10 @@ package thermometer;
  * @author marius
  */
 import static com.melektro.Tools.LoadProperty.LoadProperty;
-import com.melektro.Tools.MyWget;
 import static com.melektro.Tools.MyWget.MyWget;
 import com.pi4j.io.gpio.GpioController;
 import com.pi4j.io.gpio.GpioFactory;
-import com.pi4j.io.gpio.GpioPinDigitalOutput;
-import com.pi4j.io.gpio.PinPullResistance;
 import com.pi4j.io.gpio.PinState;
-import com.pi4j.io.gpio.RaspiPin;
-import com.sun.corba.se.impl.protocol.giopmsgheaders.Message;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
@@ -34,29 +29,31 @@ import java.util.List;
 import java.util.Properties;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
-import javax.naming.Context;
 import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
-import com.pi4j.io.gpio.PinMode;
+import com.melektro.Tools.LogsFormatter;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
-import java.time.ZonedDateTime;
-import java.time.format.DateTimeFormatter;
-import static javafx.scene.input.KeyCode.T;
+import static com.melektro.Tools.LogsFormatter.Log;
+import com.melektro.Tools.initialstate.API;
+import com.melektro.Tools.initialstate.Bucket;
+import com.melektro.Tools.initialstate.Data;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import thermometer.Mappers.DeviceGPIOToRaspiGPIOMapper;
 
 public class ThermometerApp
 {
 
+    //Logger logger = Logger.getLogger(ThermometerApp.class.getName());
     static String baseDir = "/sys/bus/w1/devices/";
     static String searchPattern = "28";
     static String deviceFile = "/w1_slave";
     static int Interval = 3000;
     private static String DefaultUpperLimit = "22.5";
     private static String DefaultLowerLimit = "21.5";
-    private static Float DefaultUpper;
-    private static Float DefaultLower;
+    private static String SleepDelay = "1";
+    private static int SleepDelayInt;
     private static List<Device> devices;
     protected static final String CONFIGFILE = "thermometer.config.properties";
     private static final GpioController GPIO = GpioFactory.getInstance();
@@ -68,14 +65,25 @@ public class ThermometerApp
     private static SunRiseSet sunRiseSet = null;
     private static LocalDate dateNow = LocalDate.MIN;
 
+    private static void DoLogging(String logMessage)
+    {
+        Log(logMessage);
+    }
 
     private static SunRiseSet GetSunRiseSunSet() throws IOException
     {
-        //https://sunrise-sunset.org/api
-        String riseSet = MyWget("https://api.sunrise-sunset.org/json?lat=50.918769&lng=4.698409", "", "")
-                .replace('[', ' ')
-                .replace(']', ' ');
-        //String riseSet =  "{\"results\":{\"sunrise\":\"4:43:38 AM\",\"sunset\":\"3:0:0 PM\",\"solar_noon\":\"11:40:57 AM\",\"day_length\":\"13:54:39\",\"civil_twilight_begin\":\"4:08:36 AM\",\"civil_twilight_end\":\"7:13:18 PM\",\"nautical_twilight_begin\":\"3:25:03 AM\",\"nautical_twilight_end\":\"7:56:51 PM\",\"astronomical_twilight_begin\":\"2:36:08 AM\",\"astronomical_twilight_end\":\"8:45:46 PM\"},\"status\":\"OK\"}" ;
+        String riseSet;
+        riseSet = (DEBUG)
+                ? "{\"results\":{\"sunrise\":\"4:43:38 AM\""
+                + ",\"sunset\":\"3:0:0 PM\""
+                + ",\"solar_noon\":\"11:40:57 AM\""
+                + ",\"day_length\":\"13:54:39\""
+                + ",\"civil_twilight_begin\":\"4:08:36 AM\",\"civil_twilight_end\":\"7:13:18 PM\""
+                + ",\"nautical_twilight_begin\":\"3:25:03 AM\",\"nautical_twilight_end\":\"7:56:51 PM\""
+                + ",\"astronomical_twilight_begin\":\"2:36:08 AM\",\"astronomical_twilight_end\":\"8:45:46 PM\"},\"status\":\"OK\"}"
+                : MyWget("https://api.sunrise-sunset.org/json?lat=50.918769&lng=4.698409", "", "")
+                        .replace('[', ' ')
+                        .replace(']', ' '); //https://sunrise-sunset.org/api
 
         Gson gson = new Gson();
 
@@ -89,14 +97,22 @@ public class ThermometerApp
         LocalTime sunSet = sunRiseSet.getResults().getSunset();
         LocalDateTime sunSetDT = LocalDateTime.of(LocalDate.now(), sunSet);
         LocalDateTime now = LocalDateTime.now();
+
         if (now.isAfter(sunRiseDT))
         {
             sunRiseDT = sunRiseDT.plusDays(1);
         }
-        return (now.isAfter(sunSetDT.plusHours(i)) && now.isBefore(sunRiseDT.plusHours(i)));
+
+        if (now.getDayOfMonth() == sunRiseDT.getDayOfMonth() && now.getDayOfMonth() == sunSetDT.getDayOfMonth())
+        {
+            return now.isBefore(sunRiseDT.plusHours(i));
+        } else
+        {
+            return (now.isAfter(sunSetDT.plusHours(i)) && now.isBefore(sunRiseDT.plusHours(i)));
+        }
     }
 
-    private static boolean GetNewSunriseSunSet()
+    private static boolean MustGetNewSunriseSunSet()
     {
         LocalDate localNow = LocalDate.now();
         return !dateNow.isEqual(localNow);
@@ -117,8 +133,7 @@ public class ThermometerApp
             output = new FileOutputStream(CONFIGFILE);
             prop.setProperty("DefaultUpperLimit", DefaultUpperLimit);
             prop.setProperty("DefaultLowerLimit", DefaultLowerLimit);
-            DefaultUpper = Float.parseFloat(DefaultUpperLimit);
-            DefaultLower = Float.parseFloat(DefaultLowerLimit);
+            prop.setProperty("SleepDelay", "1");
 
             for (Device device : devices)
             {
@@ -184,8 +199,8 @@ public class ThermometerApp
 
                 DefaultUpperLimit = LoadProperty(prop, "DefaultUpperLimit", "22.5");
                 DefaultLowerLimit = LoadProperty(prop, "DefaultLowerLimit", "21.5");
-                DefaultUpper = Float.parseFloat(DefaultUpperLimit);
-                DefaultLower = Float.parseFloat(DefaultLowerLimit);
+                SleepDelay = LoadProperty(prop, "SleepDelay", "1");
+                SleepDelayInt = Integer.parseInt(SleepDelay);
 
                 for (Device device : devices)
                 {
@@ -342,7 +357,7 @@ public class ThermometerApp
         }
     }
 
-    private static void RunACycle()
+    private static void RunACycle(API account, Bucket bucket)
     {
         try
         {
@@ -351,7 +366,7 @@ public class ThermometerApp
                 Path currentRelativePath = Paths.get("");
                 String appPath = currentRelativePath.toAbsolutePath().toString();
 
-                System.out.println("Please setup the configuration in " + appPath + "/" + CONFIGFILE);
+                DoLogging("Please setup the configuration in " + appPath + "/" + CONFIGFILE);
                 System.exit(0);
             }
 
@@ -367,43 +382,48 @@ public class ThermometerApp
 
                 device.Temperature = GetDeviceTemperature(device);
 
-                if (GetNewSunriseSunSet())
+                if (MustGetNewSunriseSunSet())
                 {
                     sunRiseSet = GetSunRiseSunSet();
                     dateNow = LocalDate.now();
                 }
 
-                if (!TimeToSleep(sunRiseSet, 1))
+                if (!TimeToSleep(sunRiseSet, SleepDelayInt))
                 {
                     if (device.goingUp)
                     {
                         if (device.Temperature >= device.Upper)
                         {
                             device.goingUp = false;
-                            System.out.println("Cycle = " + device.cycle + " - " + device.Name + " - Phase change from going up to going down");
+                            DoLogging("Cycle = " + device.cycle + " - " + device.Name + " - Phase change from going up to going down");
                         } else
                         {
                             SetPin(device, 0);
-                            System.out.println("Cycle = " + device.cycle + " - " + device.Name + " - going up - " + device.Temperature + " < (Upper) " + device.Upper + " Pad is ON");
+                            DoLogging("Cycle = " + device.cycle + " - " + device.Name + " - going up - " + device.Temperature + " < (Upper) " + device.Upper + " Pad is ON");
+                            Data data = new Data("Temperature", device.Temperature);
+                            account.createData(bucket, data);
                         }
                     } else
                     {
                         if (device.Temperature <= device.Lower)
                         {
-                            System.out.println("Cycle = " + device.cycle + " - " + device.Name + " - Phase change from going down to going up");
+                            DoLogging("Cycle = " + device.cycle + " - " + device.Name + " - Phase change from going down to going up");
                             device.goingUp = true;
                         } else
                         {
                             SetPin(device, 1);
-                            System.out.println("Cycle = " + device.cycle + " - " + device.Name + " - going down - " + device.Temperature + " > (Lower)" + device.Lower + " Pad is OFF");
+                            DoLogging("Cycle = " + device.cycle + " - " + device.Name + " - going down - " + device.Temperature + " > (Lower)" + device.Lower + " Pad is OFF");
+                            Data data = new Data("Temperature", device.Temperature);
+                            account.createData(bucket, data);
                         }
                     }
                 } else
                 {
                     SetPin(device, 1);
-                    System.out.println("Cycle = " + device.cycle + " - " + device.Name + " Sleeping at " + device.Temperature + " deg C");
+                    DoLogging("Cycle = " + device.cycle + " - " + device.Name + " Sleeping at " + device.Temperature + " deg C");
+                    Data data = new Data("Temperature", device.Temperature);
+                    account.createData(bucket, data);
                 }
-
             }
         } catch (IOException ex)
         {
@@ -417,27 +437,39 @@ public class ThermometerApp
      */
     public static void main(String[] args) throws IOException, InterruptedException
     {
-        DateTimeFormatter timeFormatter = DateTimeFormatter.ofPattern("h:m:s a");
+        Logger logger = new LogsFormatter().setLogging("Temperature.log", Level.ALL, 2000, 1);
+        //Legacy initialstate
+//        API account = new API("DigWb1DqrIdDrcEVICRmcKhcvSgvfH3b");
+//        Bucket bucket = new Bucket("BQQMNTAAYE3A", "Thermometer Bucket");
+        //New initialstate
+        API account = new API("ist_AOIMDbQYFmXEk-DGk8qvhhCSAZ6qpb6_");
+        Bucket bucket = new Bucket("X8EC3R6DTHJT", "Thermometer Bucket");
+        account.createBucket(bucket);
 
         SunRiseSet sunRiseSet = null;
-        //final GpioController gpio = GpioFactory.getInstance();
-        //final GpioPinDigitalOutput GPIOpin = gpio.provisionDigitalOutputPin(RaspiPin.GPIO_00, "PinOut", PinState.HIGH);
-        //GPIOpin.setShutdownOptions(true, PinState.HIGH);
         devices = SetupDevices(GetDS18B20Directories());
+
+        Log("Starting Thermometer App");
+
+        Runtime.getRuntime().addShutdownHook(new Thread(() ->
+        {
+            Log("Terminating");
+            GPIO.shutdown();
+        }));
 
         if (DEBUG)
         {
             int DebugCycles = 10;
             for (int i = 0; i < DebugCycles; i++)
             {
-                RunACycle();
+                RunACycle(account, bucket);
             }
         } else
         {
             for (;;)
 
             {
-                RunACycle();
+                RunACycle(account, bucket);
                 Thread.sleep(Interval);
             }
         }

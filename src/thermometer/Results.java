@@ -57,18 +57,16 @@ public class Results
     private LocalTime sunSet;
 
     DateTimeFormatter timeFormatter = DateTimeFormatter.ofPattern("h:m:s a");
-    
+
     public LocalTime getSunrise()
     {
-        LocalTime l =LocalTime.from(timeFormatter.parse(sunrise));
-        
-        return  LocalTime.from(ZonedDateTime
+        LocalTime l = LocalTime.from(timeFormatter.parse(sunrise));
+
+        return LocalTime.from(ZonedDateTime
                 .of(LocalDateTime
                         .of(LocalDate.now(), l), ZoneId.of("Z"))
                 .withZoneSameInstant(ZoneId.of("Europe/Brussels")));
     }
-    
-    
 
     public String getSunriseString()
     {
@@ -82,7 +80,7 @@ public class Results
 
     public LocalTime getSunset()
     {
-        return  LocalTime.from(ZonedDateTime
+        return LocalTime.from(ZonedDateTime
                 .of(LocalDateTime
                         .of(LocalDate.now(), LocalTime.from(timeFormatter.parse(sunset))), ZoneId.of("Z"))
                 .withZoneSameInstant(ZoneId.of("Europe/Brussels")));
