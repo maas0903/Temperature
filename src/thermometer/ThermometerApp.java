@@ -56,6 +56,13 @@ public class ThermometerApp
     private static int SleepDelayInt;
     private static List<Device> devices;
     protected static final String CONFIGFILE = "thermometer.config.properties";
+    protected static final String SENSITIVEFILE = "sensitive.prop";
+    private static String DefaultAccessKey = "DefaultAccessKey";
+    private static String DefaultBucketKey = "DefaultBucketKey";
+    private static String AccessKey;
+    private static String BucketKey;
+    private static final String MESS = "Sensitive data must be set in the property file \"./sensitive.prop\"";
+
     private static final GpioController GPIO = GpioFactory.getInstance();
 
     private static final String DEBUGFILECONTENT = "66 01 4b 46 7f ff 0a 10 2d : crc=2d YES\n"
@@ -162,6 +169,69 @@ public class ThermometerApp
                 prop.setProperty(device.Name + "LowerLimit", device.LowerLimit);
             }
 
+            prop.store(output, null);
+        } catch (IOException e)
+        {
+        } finally
+        {
+            if (output != null)
+            {
+                try
+                {
+                    output.close();
+                } catch (IOException e)
+                {
+                }
+            }
+        }
+    }
+
+    private static Properties GetSensitive()
+    {
+        Properties prop = new Properties();
+        InputStream input = null;
+
+        File file = new File(SENSITIVEFILE);
+
+        if (!file.exists())
+        {
+            SetSensitive();
+            Log(MESS);
+            System.exit(0);
+        } else
+        {
+            try
+            {
+                input = new FileInputStream(file);
+                prop.load(input);
+            } catch (IOException e)
+            {
+            } finally
+            {
+                if (input != null)
+                {
+                    try
+                    {
+                        input.close();
+                    } catch (IOException e)
+                    {
+                    }
+                }
+            }
+        }
+        return prop;
+    }
+
+    private static void SetSensitive()
+    {
+        Properties prop = new Properties();
+        OutputStream output = null;
+
+        try
+        {
+            output = new FileOutputStream(SENSITIVEFILE);
+            prop.setProperty("accessKey", DefaultAccessKey);
+            prop.setProperty("bucketKey", DefaultBucketKey);
             prop.store(output, null);
         } catch (IOException e)
         {
@@ -438,12 +508,19 @@ public class ThermometerApp
     public static void main(String[] args) throws IOException, InterruptedException
     {
         Logger logger = new LogsFormatter().setLogging("Temperature.log", Level.ALL, 2000, 1);
-        //Legacy initialstate
-//        API account = new API("DigWb1DqrIdDrcEVICRmcKhcvSgvfH3b");
-//        Bucket bucket = new Bucket("BQQMNTAAYE3A", "Thermometer Bucket");
-        //New initialstate
-        API account = new API("ist_AOIMDbQYFmXEk-DGk8qvhhCSAZ6qpb6_");
-        Bucket bucket = new Bucket("X8EC3R6DTHJT", "Thermometer Bucket");
+
+        Properties prop = GetSensitive();
+        AccessKey = LoadProperty(prop, "accessKey", DefaultAccessKey);
+        BucketKey = LoadProperty(prop, "bucketKey", DefaultBucketKey);
+        if (AccessKey.equals(DefaultAccessKey) || BucketKey.equals(DefaultBucketKey))
+        {
+            Log(MESS);
+            System.exit(0);
+        }
+
+        API account = new API(AccessKey);
+        Bucket bucket = new Bucket(BucketKey);
+
         account.createBucket(bucket);
 
         SunRiseSet sunRiseSet = null;
